@@ -1,332 +1,242 @@
-"""Build-time script: draw the 1024x1024 newspaper front page entry.png.
+#!/usr/bin/env python3
+"""Render the front page of 'The World Today' for Tuesday 24 November 2026.
 
-Run once:  python3 draw_news.py
-Reads nothing but the story constants below; writes entry.png next to
-this script. Pure Python 3 standard library: a small built-in 5x7
-bitmap font rendered onto an RGB pixel buffer, then encoded as a PNG
-with zlib (filter 0, no interlace). No Pillow, no system fonts, no
-third-party code.
+A single 1024x1024 newspaper front page summarising six real world-news
+stories from Monday 23 November 2026, plus an In Brief strip. Written from
+scratch for the 2026-11-24 edition. Requires Pillow.
+
+Usage:
+    python3 draw_news.py            # writes entry.png next to this file
 """
 
-import struct
-import textwrap
-import zlib
+from __future__ import annotations
 
-W = H = 1024
-MARGIN = 36
+import os
 
-BLACK = (20, 20, 20)
-GREY = (90, 90, 90)
-RED = (178, 34, 34)
-PAPER = (250, 247, 238)
-RULE = (60, 60, 60)
-DARK = (30, 30, 34)
-GOLD = (255, 210, 90)
-OFFWHITE = (235, 235, 235)
+from PIL import Image, ImageDraw, ImageFont
 
-# ---------------------------------------------------------------- font
-# 5x7 bitmap font: each glyph is 7 rows of 5 bits, '#' set, '.' clear.
-# Glyph advance is 6 pixels (5 + 1 spacing). Only ASCII is used.
-FONT = {
-    'A': (".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"),
-    'B': ("####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."),
-    'C': (".####", "#....", "#....", "#....", "#....", "#....", ".####"),
-    'D': ("####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####."),
-    'E': ("#####", "#....", "#....", "####.", "#....", "#....", "#####"),
-    'F': ("#####", "#....", "#....", "####.", "#....", "#....", "#...."),
-    'G': (".####", "#....", "#....", "#.###", "#...#", "#...#", ".###."),
-    'H': ("#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"),
-    'I': ("#####", "..#..", "..#..", "..#..", "..#..", "..#..", "#####"),
-    'J': ("..###", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##.."),
-    'K': ("#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"),
-    'L': ("#....", "#....", "#....", "#....", "#....", "#....", "#####"),
-    'M': ("#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#"),
-    'N': ("#...#", "##..#", "#.#.#", "#..##", "#...#", "#...#", "#...#"),
-    'O': (".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."),
-    'P': ("####.", "#...#", "#...#", "####.", "#....", "#....", "#...."),
-    'Q': (".###.", "#...#", "#...#", "#...#", "#.#.#", "#..#.", ".##.#"),
-    'R': ("####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#"),
-    'S': (".####", "#....", "#....", ".###.", "....#", "....#", "####."),
-    'T': ("#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.."),
-    'U': ("#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."),
-    'V': ("#...#", "#...#", "#...#", "#...#", "#...#", ".#.#.", "..#.."),
-    'W': ("#...#", "#...#", "#...#", "#.#.#", "#.#.#", "##.##", "#...#"),
-    'X': ("#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#"),
-    'Y': ("#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#.."),
-    'Z': ("#####", "....#", "...#.", "..#..", ".#...", "#....", "#####"),
-    'a': (".....", ".....", ".###.", "....#", ".####", "#...#", ".####"),
-    'b': ("#....", "#....", "####.", "#...#", "#...#", "#...#", "####."),
-    'c': (".....", ".....", ".####", "#....", "#....", "#....", ".####"),
-    'd': ("....#", "....#", ".####", "#...#", "#...#", "#...#", ".####"),
-    'e': (".....", ".....", ".###.", "#...#", "#####", "#....", ".###."),
-    'f': ("..##.", ".#...", ".#...", "####.", ".#...", ".#...", ".#..."),
-    'g': (".....", ".....", ".####", "#...#", "#...#", ".####", "....#"),
-    'h': ("#....", "#....", "####.", "#...#", "#...#", "#...#", "#...#"),
-    'i': ("..#..", ".....", ".##..", "..#..", "..#..", "..#..", ".###."),
-    'j': ("...#.", ".....", "..##.", "...#.", "...#.", "...#.", "...#."),
-    'k': ("#....", "#....", "#..#.", "#.#..", "##...", "#.#..", "#..#."),
-    'l': (".##..", "..#..", "..#..", "..#..", "..#..", "..#..", ".###."),
-    'm': (".....", ".....", "##.#.", "#.#.#", "#.#.#", "#.#.#", "#.#.#"),
-    'n': (".....", ".....", "####.", "#...#", "#...#", "#...#", "#...#"),
-    'o': (".....", ".....", ".###.", "#...#", "#...#", "#...#", ".###."),
-    'p': (".....", ".....", "####.", "#...#", "#...#", "####.", "#...."),
-    'q': (".....", ".....", ".####", "#...#", "#...#", ".####", "....#"),
-    'r': (".....", ".....", "#.##.", "##..#", "#....", "#....", "#...."),
-    's': (".....", ".....", ".####", "#....", ".###.", "....#", "####."),
-    't': (".#...", ".#...", "####.", ".#...", ".#...", ".#...", "..##."),
-    'u': (".....", ".....", "#...#", "#...#", "#...#", "#..##", ".##.#"),
-    'v': (".....", ".....", "#...#", "#...#", "#...#", ".#.#.", "..#.."),
-    'w': (".....", ".....", "#...#", "#...#", "#.#.#", "#.#.#", ".#.#."),
-    'x': (".....", ".....", "#...#", ".#.#.", "..#..", ".#.#.", "#...#"),
-    'y': (".....", ".....", "#...#", "#...#", "#...#", ".####", "....#"),
-    'z': (".....", ".....", "#####", "...#.", "..#..", ".#...", "#####"),
-    '0': (".###.", "#..##", "#.#.#", "##..#", "#...#", "#...#", ".###."),
-    '1': ("..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."),
-    '2': (".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"),
-    '3': ("####.", "....#", "....#", ".###.", "....#", "....#", "####."),
-    '4': ("...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."),
-    '5': ("#####", "#....", "####.", "....#", "....#", "#...#", ".###."),
-    '6': (".###.", "#....", "#....", "####.", "#...#", "#...#", ".###."),
-    '7': ("#####", "....#", "...#.", "...#.", "..#..", "..#..", "..#.."),
-    '8': (".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."),
-    '9': (".###.", "#...#", "#...#", ".####", "....#", "....#", ".###."),
-    ' ': (".....", ".....", ".....", ".....", ".....", ".....", "....."),
-    '.': (".....", ".....", ".....", ".....", ".....", ".##..", ".##.."),
-    ',': (".....", ".....", ".....", ".....", ".##..", ".##..", ".#..."),
-    '!': ("..#..", "..#..", "..#..", "..#..", "..#..", ".....", "..#.."),
-    '?': (".###.", "#...#", "....#", "...#.", "..#..", ".....", "..#.."),
-    "'": ("..#..", "..#..", ".#...", ".....", ".....", ".....", "....."),
-    '"': (".#.#.", ".#.#.", ".#.#.", ".....", ".....", ".....", "....."),
-    '-': (".....", ".....", ".....", ".###.", ".....", ".....", "....."),
-    ':': (".....", ".##..", ".##..", ".....", ".##..", ".##..", "....."),
-    ';': (".....", ".##..", ".##..", ".....", ".##..", ".##..", ".#..."),
-    '(': ("...#.", "..#..", ".#...", ".#...", ".#...", "..#..", "...#."),
-    ')': (".#...", "..#..", "...#.", "...#.", "...#.", "..#..", ".#..."),
-    '/': ("....#", "....#", "...#.", "..#..", ".#...", "#....", "#...."),
-    '%': ("##..#", "##.#.", "...#.", "..#..", ".#...", "#.##.", "#..##"),
-    '&': (".###.", "#...#", "#.#..", ".#...", "#.#.#", "#..#.", ".##.#"),
-    '$': ("..#..", ".####", "#.#..", ".###.", "..#.#", "####.", "..#.."),
-    '+': (".....", "..#..", "..#..", ".###.", "..#..", "..#..", "....."),
-    '=': (".....", ".....", "#####", ".....", "#####", ".....", "....."),
-    '*': (".....", ".#.#.", "..#..", "#####", "..#..", ".#.#.", "....."),
-    '_': (".....", ".....", ".....", ".....", ".....", ".....", "#####"),
-    '<': ("...#.", "..#..", ".#...", "#....", ".#...", "..#..", "...#."),
-    '>': (".#...", "..#..", "...#.", "....#", "...#.", "..#..", ".#..."),
-    '@': (".###.", "#...#", "#.###", "#.#.#", "#.###", "#....", ".###."),
-    '#': (".#.#.", ".#.#.", "#####", ".#.#.", "#####", ".#.#.", ".#.#."),
-    # Bullet and em dash, mapped from their unicode forms at draw time.
-    '\u2022': (".....", ".###.", ".###.", ".###.", ".....", ".....", "....."),
-    '\u2014': (".....", ".....", ".....", "#####", ".....", ".....", "....."),
-    '\u201c': (".##.#", ".##.#", ".##.#", ".....", ".....", ".....", "....."),
-    '\u201d': (".##.#", ".##.#", ".##.#", ".....", ".....", ".....", "....."),
-    '\u2019': ("..#..", "..#..", ".#...", ".....", ".....", ".....", "....."),
-}
+WIDTH = 1024
+HEIGHT = 1024
+MARGIN = 38
+OUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "entry.png")
+
+PAPER = (247, 243, 232)
+INK = (18, 18, 18)
+MUTED = (90, 84, 72)
+ACCENT = (148, 24, 24)
+RULE = (40, 40, 40)
+LIGHT_RULE = (180, 172, 156)
+
+SERIF = "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
+SERIF_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"
+SERIF_ITALIC = "/usr/share/fonts/truetype/liberation/LiberationSerif-Italic.ttf"
+SANS = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+SANS_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
 
 
-def text_width(text, scale):
-    """Pixel width of `text` at the given font scale (monospace)."""
-    return len(text) * 6 * scale
+def font(path: str, size: int) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype(path, size)
 
 
-def draw_text(pixels, text, x, y, scale, color):
-    """Draw `text` with its top-left corner at (x, y). Unknown glyphs
-    become blanks; curly quotes and dashes are normalised first."""
-    text = (text.replace("\u2018", "'").replace("\u2019", "'")
-            .replace("\u201c", '"').replace("\u201d", '"'))
-    for ch in text:
-        glyph = FONT.get(ch)
-        if glyph:
-            for row_i, row in enumerate(glyph):
-                for col_i, bit in enumerate(row):
-                    if bit == '#':
-                        for dy in range(scale):
-                            for dx in range(scale):
-                                px = x + col_i * scale + dx
-                                py = y + row_i * scale + dy
-                                if 0 <= px < W and 0 <= py < H:
-                                    pixels[py * W + px] = color
-        x += 6 * scale
-    return x
-
-
-def wrap_text(text, max_chars):
-    """Greedy word wrap on character count (monospace font)."""
-    lines = []
-    for para in text.split("\n"):
-        lines.extend(textwrap.wrap(para, width=max_chars) or [""])
+def wrap(draw: ImageDraw.ImageDraw, text: str, fnt: ImageFont.FreeTypeFont,
+         max_width: int) -> list[str]:
+    """Greedy word wrap using the font's real metrics."""
+    lines: list[str] = []
+    for paragraph in text.split("\n"):
+        words = paragraph.split()
+        if not words:
+            lines.append("")
+            continue
+        current = words[0]
+        for word in words[1:]:
+            trial = current + " " + word
+            if draw.textlength(trial, font=fnt) <= max_width:
+                current = trial
+            else:
+                lines.append(current)
+                current = word
+        lines.append(current)
     return lines
 
 
-def draw_para(pixels, text, x, y, width, scale, color=BLACK):
-    """Draw wrapped text; return the y just below the last line."""
-    max_chars = max(1, width // (6 * scale))
-    leading = 7 * scale + scale // 2 + 2
-    for line in wrap_text(text, max_chars):
-        draw_text(pixels, line, x, y, scale, color)
+def draw_wrapped(draw: ImageDraw.ImageDraw, x: int, y: int, text: str,
+                 fnt: ImageFont.FreeTypeFont, max_width: int,
+                 fill=INK, leading: int | None = None) -> int:
+    """Draw wrapped text; return the y coordinate just below the last line."""
+    if leading is None:
+        leading = fnt.size + 6
+    for line in wrap(draw, text, fnt, max_width):
+        draw.text((x, y), line, font=fnt, fill=fill)
         y += leading
     return y
 
 
-def rect(pixels, x0, y0, x1, y1, color):
-    for py in range(max(0, y0), min(H, y1)):
-        base = py * W
-        for px in range(max(0, x0), min(W, x1)):
-            pixels[base + px] = color
+def centred(draw: ImageDraw.ImageDraw, y: int, text: str,
+            fnt: ImageFont.FreeTypeFont, fill=INK) -> int:
+    width = draw.textlength(text, font=fnt)
+    draw.text(((WIDTH - width) / 2, y), text, font=fnt, fill=fill)
+    return y + fnt.size + 6
 
 
-def hline(pixels, y, x0=MARGIN, x1=W - MARGIN, width=2, color=RULE):
-    for dy in range(width):
-        for px in range(x0, x1):
-            pixels[(y + dy) * W + px] = color
+def rule(draw: ImageDraw.ImageDraw, y: int, x0: int, x1: int, width: int = 1,
+         fill=RULE) -> None:
+    draw.line([(x0, y), (x1, y)], fill=fill, width=width)
 
 
-def headline_block(pixels, x, y, width, kicker, headline, body,
-                   head_scale=4, body_scale=2, kicker_color=RED):
-    draw_text(pixels, kicker, x, y, 2, kicker_color)
-    y += 7 * 2 + 6
-    y = draw_para(pixels, headline, x, y, width, head_scale)
+def kicker(draw: ImageDraw.ImageDraw, x: int, y: int, text: str) -> int:
+    fnt = font(SANS_BOLD, 14)
+    draw.text((x, y), text.upper(), font=fnt, fill=ACCENT)
+    return y + 21
+
+
+def headline(draw: ImageDraw.ImageDraw, x: int, y: int, text: str,
+             size: int, max_width: int, leading: int | None = None) -> int:
+    fnt = font(SERIF_BOLD, size)
+    return draw_wrapped(draw, x, y, text, fnt, max_width, leading=leading)
+
+
+def main() -> None:
+    image = Image.new("RGB", (WIDTH, HEIGHT), PAPER)
+    draw = ImageDraw.Draw(image)
+    left = MARGIN
+    right = WIDTH - MARGIN
+    content_w = right - left
+
+    # ---------- Masthead ----------
+    y = 20
+    y = centred(draw, y, "TUESDAY, 24 NOVEMBER 2026", font(SANS_BOLD, 16), MUTED)
+    y += 2
+    y = centred(draw, y, "The World Today", font(SERIF_BOLD, 60))
+    y = centred(draw, y, "Six stories that shaped the world — in one page",
+                font(SERIF_ITALIC, 17), MUTED)
+    y += 4
+    rule(draw, y, left, right, width=4)
     y += 6
-    y = draw_para(pixels, body, x, y, width, body_scale)
-    return y
-
-
-def encode_png(pixels):
-    """Encode an RGB pixel buffer as a PNG (8-bit, colour type 2)."""
-    raw = bytearray()
-    for row in range(H):
-        raw.append(0)  # filter: none
-        base = row * W
-        for i in range(W):
-            raw.extend(pixels[base + i])
-    data = zlib.compress(bytes(raw), 9)
-
-    def chunk(kind, payload):
-        return (struct.pack(">I", len(payload)) + kind + payload +
-                struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF))
-
-    ihdr = struct.pack(">IIBBBBB", W, H, 8, 2, 0, 0, 0)
-    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) +
-            chunk(b"IDAT", data) + chunk(b"IEND", b""))
-
-
-def main():
-    pixels = [PAPER] * (W * H)
-
-    # ---- Masthead -------------------------------------------------
-    title = "THE WORLD TODAY"
-    scale = 9
-    tw = text_width(title, scale)
-    y = 18
-    draw_text(pixels, title, (W - tw) // 2, y, scale, BLACK)
-    y += 7 * scale + 12
-    hline(pixels, y, width=3)
+    rule(draw, y, left, right, width=1)
     y += 10
-    dateline = ("TUESDAY 24 NOVEMBER 2026  \u2022  ONE IMAGE \u2014 SIX STORIES "
-                "FROM AROUND THE GLOBE")
-    draw_text(pixels, dateline, (W - text_width(dateline, 2)) // 2, y, 2, BLACK)
-    y += 7 * 2 + 12
-    hline(pixels, y, width=1)
 
-    # ---- Lead story: Nvidia brings Huang back ---------------------
-    y += 10
-    lead_w = W - 2 * MARGIN
-    y = headline_block(
-        pixels, MARGIN, y, lead_w,
-        "LEAD  \u2022  TECH  \u2022  SANTA CLARA",
-        "Nvidia brings back Huang as CEO after Trump steps in",
-        "Nvidia's board on Monday reinstated Jensen Huang as chief "
-        "executive, 11 days after he resigned over an affair with a woman "
+    # ---------- Lead story: Nvidia / Huang ----------
+    y = kicker(draw, left, y, "Lead story — Markets · Washington")
+    y = headline(draw, left, y,
+                 "Nvidia brings back Huang as CEO after Trump steps in",
+                 size=31, max_width=content_w, leading=37)
+    y += 2
+    body = (
+        "Nvidia's board voted unanimously on Monday to reinstate Jensen Huang "
+        "as president and chief executive, eleven days after he resigned over "
+        "revelations of extramarital affairs, including one with a woman "
         "suspected of being a Chinese spy. The board said it had received "
-        "input from senior levels of the US government and was confident "
-        "his return posed no national security risk. President Donald "
-        "Trump, who dialled into a board meeting to argue for Huang's "
-        "return, took credit for the reversal, and Nvidia shares soared "
-        "33 percent.",
-        head_scale=5, body_scale=2)
-    y += 10
-    hline(pixels, y, width=1)
-
-    # ---- Three-column row -----------------------------------------
+        "\u201cinput from senior levels of the United States government\u201d and "
+        "was confident the return posed no national security risk. President "
+        "Donald Trump dialled into a board meeting to argue for Huang's "
+        "return, telling CNBC his intervention was 'very important.' "
+        "Shares soared 33%, adding more than $900 billion in "
+        "market value. Huang will testify before the US Senate on 3 December."
+    )
+    y = draw_wrapped(draw, left, y, body, font(SERIF, 18), content_w,
+                     leading=22)
     y += 8
-    col_w = (W - 2 * MARGIN - 2 * 24) // 3
-    xs = [MARGIN, MARGIN + col_w + 24, MARGIN + 2 * (col_w + 24)]
+    rule(draw, y, left, right, width=2)
+    y += 12
+
+    # ---------- Stories 2-5 in a two-column grid ----------
     stories = [
-        ("CONFLICT  \u2022  HORMUZ",
-         "Iran vows every means to break US blockade",
-         "Iran said on Monday it would use all its tools to confront a US "
-         "naval blockade, a day after President Donald Trump threatened "
-         "to sink Iranian ships that try to break it. Tankers have "
-         "gathered near Kharg Island as Tehran weighs a test."),
-        ("WAR AT SEA  \u2022  LIBYA",
-         "Ukraine sinks Russian corvette off Libya",
-         "President Volodymyr Zelenskyy said on Monday that Ukrainian "
-         "naval drones sank the Russian corvette Merkury off Libya, "
-         "2,400 km from the front line. A Ka-27 helicopter aboard was "
-         "destroyed and the cargo ship MV Angara was also hit."),
-        ("EUROPE  \u2022  BRUSSELS",
-         "EU unveils 22nd sanctions package on Russia",
-         "The European Commission on Monday proposed its 22nd package of "
-         "sanctions on Russia, targeting some 60 banks for removal from "
-         "SWIFT and crypto platforms used to evade sanctions. More than "
-         "70 shadow-fleet ships would also be listed."),
+        ("Middle East", "Iran vows every means to break US blockade",
+         "Tehran said on Monday it would use all its tools to confront the "
+         "US naval blockade of its ports, a day after President Trump warned "
+         "Iranian tankers that tried to break it would end up \u201cat the "
+         "bottom of the sea\u201d. More than a dozen Iranian oil tankers have "
+         "gathered near Kharg Island as Tehran weighs testing it."),
+        ("Ukraine war", "Ukraine sinks Russian corvette off Libya",
+         "President Volodymyr Zelenskyy said Ukrainian forces sank the "
+         "Russian corvette Merkury off Libya using seven Ukrainian-made "
+         "naval drones. The ship, commissioned in 2023, was docked at the "
+         "Benghazi naval base, about 2,400 km from the front line. The "
+         "cargo vessel MV Angara was also hit."),
+        ("Europe", "EU unveils 22nd sanctions package on Russia",
+         "The European Commission proposed its 22nd sanctions package "
+         "against Russia on Monday. It targets some 60 Russian banks, all "
+         "to be removed from SWIFT, and cracks down on crypto networks used "
+         "to evade sanctions. More than 70 shadow-fleet vessels would be "
+         "listed."),
+        ("Asia", "Factory fire toll rises to 24; about 30 missing",
+         "Indonesian authorities confirmed 24 people were killed in a fire "
+         "that tore through a building of the PT Fonusa Agung Mulia "
+         "confectionery factory in Cikande, Banten, on Saturday evening. "
+         "About 30 people remained missing as rescuers searched the "
+         "burned-out structure; about 300 were on shift when it started."),
     ]
-    row_end = y
-    for x, (kick, head, body) in zip(xs, stories):
-        end = headline_block(pixels, x, y, col_w, kick, head, body,
-                             head_scale=3, body_scale=2)
-        row_end = max(row_end, end)
-    y = row_end + 8
-    hline(pixels, y, width=1)
+    col_w = (content_w - 28) // 2
+    grid_top = y
+    row_h = 168
+    for i, (section, title, text) in enumerate(stories):
+        col = i % 2
+        row = i // 2
+        x = left + col * (col_w + 28)
+        yy = grid_top + row * row_h
+        yy = kicker(draw, x, yy, section)
+        yy = headline(draw, x, yy, title, size=22, max_width=col_w,
+                      leading=26)
+        yy = draw_wrapped(draw, x, yy + 2, text, font(SERIF, 14), col_w,
+                          leading=18)
+        if col == 0:
+            draw.line([(left + col_w + 14, grid_top + row * row_h),
+                       (left + col_w + 14,
+                        grid_top + row * row_h + row_h - 14)],
+                      fill=LIGHT_RULE, width=1)
+    y = grid_top + 2 * row_h
+    rule(draw, y, left, right, width=2)
+    y += 12
 
-    # ---- Two-column row -------------------------------------------
-    y += 8
-    col2_w = (W - 2 * MARGIN - 24) // 2
-    stories2 = [
-        ("DISASTER  \u2022  INDONESIA",
-         "Factory fire toll rises to 24; about 30 missing",
-         "Indonesia confirmed on Monday that 24 people were killed in a "
-         "fire that tore through a candy factory in Banten province on "
-         "Saturday. Rescuers searched the unstable wreckage for about 30 "
-         "people still missing, while relatives waited at a police "
-         "hospital for DNA tests."),
-        ("DIPLOMACY  \u2022  NEW DELHI",
-         "India and Nepal sign 8 deals in $1.63bn pact",
-         "India announced a $1.63 billion development package for Nepal on "
-         "Monday as Prime Ministers Narendra Modi and Balendra Shah "
-         "signed eight agreements covering space technology, health, "
-         "policing, governance and agriculture. The leaders also launched "
-         "the Saryu-Kamala Express train linking Ayodhya and Janakpur."),
-    ]
-    row_end = y
-    for x, (kick, head, body) in zip([MARGIN, MARGIN + col2_w + 24], stories2):
-        end = headline_block(pixels, x, y, col2_w, kick, head, body,
-                             head_scale=3, body_scale=2)
-        row_end = max(row_end, end)
-    y = row_end + 4
+    # ---------- Story 6: India-Nepal, full width ----------
+    y = kicker(draw, left, y, "South Asia")
+    y = headline(draw, left, y,
+                 "India and Nepal sign eight deals in $1.63bn pact",
+                 size=24, max_width=content_w, leading=29)
+    y = draw_wrapped(
+        draw, left, y + 2,
+        "Prime Minister Narendra Modi announced a $1.63 billion development "
+        "cooperation package for Nepal after talks with Prime Minister "
+        "Balendra Shah in New Delhi. The two sides signed eight agreements "
+        "covering satellite communications, forensic science, police "
+        "training and health, and launched the Saryu-Kamala Express train "
+        "linking Ayodhya and Janakpur.",
+        font(SERIF, 16), content_w, leading=20)
+    y += 10
+    rule(draw, y, left, right, width=2)
+    y += 10
 
-    # ---- In Brief strip -------------------------------------------
-    strip_h = 100
-    rect(pixels, MARGIN, y, W - MARGIN, y + strip_h, DARK)
-    draw_text(pixels, "IN BRIEF", MARGIN + 14, y + 10, 2, GOLD)
+    # ---------- In Brief strip: one line per item ----------
     briefs = [
-        "UK to host the 2035 Women's World Cup; a US-led bid gets the 2031 edition.",
-        "Democrats clinch a historic US House majority of at least 258 seats.",
-        "India-New Zealand Test in Wellington ends in a draw; NZ finish 239/5.",
-        "Waymo pulls driverless taxis from all US freeways after a California ban.",
+        ("Sport", "UK to host the 2035 Women's World Cup; a US-led bid "
+                  "gets the 2031 edition."),
+        ("Politics", "Democrats clinch a historic US House majority of at "
+                     "least 258 seats."),
+        ("Sport", "India–New Zealand Test in Wellington ends in a draw; "
+                  "New Zealand finish 239/5."),
+        ("Tech", "Waymo pulls driverless taxis from all US freeways after "
+                 "a California ban."),
     ]
-    by = y + 32
-    for b in briefs:
-        lines = wrap_text("\u2022  " + b, (W - 2 * MARGIN - 28) // 12)
-        for line in lines:
-            draw_text(pixels, line, MARGIN + 14, by, 2, OFFWHITE)
-            by += 17
-    draw_text(pixels,
-              "Sources: Reuters, AP, The Hindu BusinessLine - see SOURCES.md",
-              MARGIN, y + strip_h + 6, 1, GREY)
+    draw.rectangle([left, y, right, y + 24], fill=INK)
+    draw.text((left + 10, y + 4), "IN BRIEF", font=font(SANS_BOLD, 15),
+              fill=PAPER)
+    y += 24
+    for tag, text in briefs:
+        tag_text = tag.upper() + " — "
+        tag_fnt = font(SANS_BOLD, 13)
+        body_fnt = font(SERIF, 14)
+        draw.text((left, y + 2), tag_text, font=tag_fnt, fill=ACCENT)
+        tag_w = draw.textlength(tag_text, font=tag_fnt)
+        lines = wrap(draw, text, body_fnt, content_w - tag_w)
+        draw.text((left + tag_w, y + 2), lines[0], font=body_fnt, fill=INK)
+        y += 18
+    y += 2
 
-    with open("entry.png", "wb") as handle:
-        handle.write(encode_png(pixels))
-    print(f"wrote entry.png 1024x1024 (page bottom y={y + strip_h + 20})")
+    print(f"Layout finished at y={y} of {HEIGHT}")
+    image.save(OUT_PATH, format="PNG", optimize=True)
+    size = os.path.getsize(OUT_PATH)
+    print(f"Wrote {OUT_PATH}: {image.size[0]}x{image.size[1]}, "
+          f"{size} bytes")
 
 
 if __name__ == "__main__":

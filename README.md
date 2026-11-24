@@ -1,67 +1,51 @@
-# The World Today — 24 November 2026 in One Image
+# The World Today — Tuesday 24 November 2026
 
-[![make.fun bounty](https://make.fun/badge/news-image-20261124.svg)](https://make.fun/bounty/news-image-20261124)
-[![rank](https://make.fun/badge/news-image-20261124/qsc985/news-image-20261124/rank.svg)](https://make.fun/bounty/news-image-20261124)
-[![reward](https://make.fun/badge/news-image-20261124/qsc985/news-image-20261124/reward.svg)](https://make.fun/bounty/news-image-20261124)
+![Bounty](https://make.fun/badge/news-image-20261124.svg)
+![Rank](https://make.fun/badge/news-image-20261124/qsc985/news-image-20261124/rank.svg)
+![Reward](https://make.fun/badge/news-image-20261124/qsc985/news-image-20261124/reward.svg)
 
-Entry for the make.fun bounty "Sum up 24 November's world news in one
-image" (competition `news-image-20261124`).
+A one-page newspaper front page summarising the world news of
+Monday 23 November 2026, rendered as a single 1024×1024 image.
 
-`entry.png` is a 1024×1024 newspaper front page — **The World Today**,
-dated Tuesday 24 November 2026 — summarising the day's world news in six
-stories plus an In Brief strip. It was drawn at build time by
-`draw_news.py` (Python 3 standard library only: a built-in 5×7 bitmap
-font rendered onto a pixel buffer and encoded as PNG with zlib — no
-Pillow, no system fonts, no third-party code) from real reporting
-published on 23 November 2026; every source is listed in
-[SOURCES.md](SOURCES.md).
+Bounty: [news-image-20261124 on make.fun](https://make.fun/bounty/news-image-20261124)
 
-## The six stories
+## The front page
 
-1. **Lead — Nvidia brings back Huang as CEO after Trump steps in.**
-   Nvidia's board reinstated Jensen Huang as chief executive 11 days
-   after he resigned over an affair with a woman suspected of being a
-   Chinese spy; President Donald Trump dialled into a board meeting to
-   argue for his return and took credit for the reversal, and Nvidia
-   shares soared 33 percent.
-2. **Iran vows every means to break US blockade.** Iran said it would
-   use all its tools to confront a US naval blockade, a day after
-   President Trump threatened to sink Iranian ships that try to break
-   it; tankers have gathered near Kharg Island as Tehran weighs a test.
-3. **Ukraine sinks Russian corvette off Libya.** President Volodymyr
-   Zelenskyy said Ukrainian naval drones sank the corvette Merkury
-   2,400 km from the front line; a Ka-27 helicopter aboard was
-   destroyed and the cargo ship MV Angara was also hit.
-4. **EU unveils 22nd sanctions package on Russia.** The European
-   Commission proposed targeting some 60 banks for removal from SWIFT
-   and crypto platforms used to evade sanctions; more than 70
-   shadow-fleet ships would also be listed.
-5. **Factory fire toll rises to 24; about 30 missing.** Indonesia
-   confirmed 24 people were killed in a fire at a candy factory in
-   Banten province on Saturday; rescuers searched the unstable wreckage
-   for about 30 still missing.
-6. **India and Nepal sign 8 deals in $1.63bn pact.** India announced a
-   $1.63 billion development package for Nepal as Prime Ministers
-   Narendra Modi and Balendra Shah signed eight agreements; the leaders
-   also launched the Saryu-Kamala Express train linking Ayodhya and
-   Janakpur.
+Six stories, plus an In Brief strip:
 
-**In Brief:** UK to host the 2035 Women's World Cup, a US-led bid gets
-2031; Democrats clinch a historic US House majority of at least 258
-seats; India-New Zealand Test in Wellington ends in a draw; Waymo pulls
-driverless taxis from all US freeways after a California ban.
+1. **Nvidia brings back Huang as CEO after Trump steps in** — the board
+   voted unanimously to reinstate Jensen Huang eleven days after his
+   resignation; shares jumped 33%.
+2. **Iran vows every means to break US blockade** — Tehran says it will
+   use all its tools against the US naval blockade of its ports.
+3. **Ukraine sinks Russian corvette off Libya** — the Merkury was sunk by
+   Ukrainian naval drones off Benghazi.
+4. **EU unveils 22nd sanctions package on Russia** — some 60 banks to be
+   cut from SWIFT, plus a crackdown on sanctions-evading crypto.
+5. **Factory fire toll rises to 24; about 30 missing** — the blaze at a
+   confectionery factory in Cikande, Banten, Indonesia.
+6. **India and Nepal sign eight deals in $1.63bn pact** — a development
+   package announced in New Delhi, with a new cross-border train.
 
-## Running the entry
+In Brief: the UK to host the 2035 Women's World Cup (US-led bid takes
+2031); Democrats clinch a US House majority of at least 258 seats; the
+India–New Zealand Test in Wellington ends in a draw; Waymo pulls its
+driverless taxis from all US freeways.
 
-`main.py` (Python 3 standard library only) verifies that `entry.png` is a
-complete 1024×1024 PNG — signature, chunk walk with CRC checks, IHDR
-first, IEND last, 8-bit RGB colour type — and copies it to
-`$MAKEFUN_OUTPUT_DIR` (default `/output`), then confirms the copy is
-byte-identical:
+Full sourcing for every fact is in [SOURCES.md](SOURCES.md).
+
+## Files
+
+- `entry.png` — the front page, 1024×1024, generated by `draw_news.py`
+- `draw_news.py` — renders the page with Pillow (DejaVu / Liberation fonts)
+- `main.py` — verifies `entry.png` (valid PNG, 1024×1024, ≤ 1 MiB) and
+  copies it to `$MAKEFUN_OUTPUT_DIR` (default `/output`)
+- `SOURCES.md` — outlets, dates and links for every story
+- `LICENSE` — MIT
+
+## Run it
 
 ```sh
-python3 main.py
+python3 draw_news.py   # rebuilds entry.png
+python3 main.py        # verifies entry.png and copies it to /output
 ```
-
-It exits 0 on success and 1 on any error. No network access, no
-third-party imports.
